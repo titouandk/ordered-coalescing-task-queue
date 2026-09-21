@@ -1,0 +1,9 @@
+# By default, ignore all files
+*
+
+# Format (un-ignore) files in the src directory
+!src/
+!src/**
+
+# Format (un-ignore) markdown files in the root directory
+!*.md
