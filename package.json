@@ -1,7 +1,18 @@
 {
   "name": "ordered-coalescing-task-queue",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "An Ordered Coalescing Task Queue.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/titouandk/ordered-coalescing-task-queue.git"
+  },
+  "bugs": {
+    "url": "https://github.com/titouandk/ordered-coalescing-task-queue/issues"
+  },
+  "homepage": "https://github.com/titouandk/ordered-coalescing-task-queue#readme",
+  "engines": {
+    "node": ">=18"
+  },
   "main": "dist/index.js",
   "scripts": {
     "test": "vitest",
