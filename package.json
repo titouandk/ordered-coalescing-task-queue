@@ -8,7 +8,8 @@
     "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "lint": "eslint src/"
   },
   "keywords": [
     "queue",
