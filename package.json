@@ -45,5 +45,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     }
+  },
+  "lint-staged": {
+    "*": "prettier --write --ignore-unknown"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged && npx tsc --noEmit"
   }
 }
