@@ -4,7 +4,9 @@
   "description": "An Ordered Coalescing Task Queue.",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc"
   },
   "keywords": [
     "queue",
@@ -19,5 +21,16 @@
   "type": "module",
   "devDependencies": {
     "typescript": "5.9.3"
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   }
 }
