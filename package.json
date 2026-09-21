@@ -4,12 +4,16 @@
   "description": "An Ordered Coalescing Task Queue.",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest",
     "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:types": "vitest run --config vitest.typecheck.config.ts --typecheck --typecheck.only",
+    "prepublishOnly": "npm run format:check && npm run lint && npm run test:run && npm run build"
   },
   "keywords": [
     "queue",
