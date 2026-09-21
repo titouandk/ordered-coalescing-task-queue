@@ -20,6 +20,7 @@
   "license": "MIT",
   "type": "module",
   "devDependencies": {
+    "prettier": "3.8.1",
     "typescript": "5.9.3"
   },
   "types": "dist/index.d.ts",
