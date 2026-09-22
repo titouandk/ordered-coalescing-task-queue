@@ -836,6 +836,31 @@ describe("OrderedCoalescingTaskQueue", () => {
 
       expect(signals[1].aborted).toBe(false);
     });
+
+    it("does not decrement runningCount below 0 when in-flight attempt finishes after clear", async () => {
+      const { executeTask, deferreds } = createControlledExecutor();
+      const queue = createQueue({ executeTask, maxConcurrency: 1 });
+
+      queue.pushTask({ id: "a", payload: 1 });
+      expect(executeTask).toHaveBeenCalledTimes(1);
+
+      queue.clearAllTasks();
+      // Wait for the aborted attempt's #execute continuation to run
+      await flush();
+
+      // Push two tasks with maxConcurrency: 1
+      queue.pushTask({ id: "b", payload: 2 });
+      queue.pushTask({ id: "c", payload: 3 });
+
+      // If runningCount had been decremented below 0 (to -1), BOTH b and c would have started.
+      // Since runningCount is 0, only b starts (total 2 calls so far).
+      expect(executeTask).toHaveBeenCalledTimes(2);
+
+      // Once b resolves, c starts (total 3 calls).
+      deferreds[1].resolve("B");
+      await flush();
+      expect(executeTask).toHaveBeenCalledTimes(3);
+    });
   });
 
   describe("abort listener hygiene", () => {
