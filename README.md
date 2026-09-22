@@ -38,7 +38,7 @@ const queue = new OrderedCoalescingTaskQueue({
     console.log("Executing task:", task.ids, task.payload);
   },
 
-  // Provide a function to merge payloads of adjacent tasks (when possible).
+  // Provide a function to merge payloads of adjacent tasks.
   coalesceTaskPayloads: (a, b) => {
     /* combine tasks payloads a and b */
   },
