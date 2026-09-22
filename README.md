@@ -1,6 +1,6 @@
 # ordered-coalescing-task-queue
 
-An in-memory task queue in TypeScript that coalesces adjacent tasks, executes work with bounded concurrency, retries failures, handles timeouts, and delivers results in strict FIFO submission order.
+An in-memory task queue in TypeScript that **coalesces adjacent tasks**, executes work with bounded **concurrency**, **retries** failures, handles **timeouts**, and delivers results in **strict FIFO** submission order.
 
 https://github.com/user-attachments/assets/cba8cb87-a2c8-467d-bc86-637a15bcb3a6
 
@@ -17,6 +17,50 @@ https://github.com/user-attachments/assets/cba8cb87-a2c8-467d-bc86-637a15bcb3a6
 
 ```bash
 npm install ordered-coalescing-task-queue
+```
+
+## Quick Start
+
+```typescript
+import { OrderedCoalescingTaskQueue } from "ordered-coalescing-task-queue";
+
+/*
+ * Create and configure the queue.
+ */
+const queue = new OrderedCoalescingTaskQueue({
+  maxConcurrency: 2,
+  maxCoalescingDepth: 3,
+  initialExecutionCredits: 3,
+  timeoutMs: 5000,
+
+  // Provide an executor that will run with the given tasks.
+  executeTask: async (task, abortSignal) => {
+    console.log("Executing task:", task.ids, task.payload);
+  },
+
+  // Provide a function to merge payloads of adjacent tasks (when possible).
+  coalesceTaskPayloads: (a, b) => {
+    /* combine tasks payloads a and b */
+  },
+
+  // Listen for the task final outcome (success or permanent failure) in FIFO order.
+  onTaskResult: (outcome) => {
+    console.log("Task result:", outcome);
+  },
+
+  // Optional hook called immediately when an attempt fails (provide null if unused).
+  onFailedTaskExecutionAttempt: null,
+
+  // Optional hook called when coalesceTaskPayloads throws (provide null if unused).
+  onFailedTaskCoalescence: null,
+});
+
+/*
+ * Use the queue (submitting tasks).
+ */
+queue.pushTask({ id: "task-1", payload: { message: "Hello, world!" } });
+
+// queue.clearAllTasks() will abort all tasks and clear the queue
 ```
 
 ## Usage
