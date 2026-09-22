@@ -1,6 +1,6 @@
 {
   "name": "ordered-coalescing-task-queue",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "An Ordered Coalescing Task Queue.",
   "repository": {
     "type": "git",
