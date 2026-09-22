@@ -2,7 +2,7 @@
 
 An in-memory task queue in TypeScript that **coalesces adjacent tasks**, executes work with bounded **concurrency**, **retries** failures, handles **timeouts**, and delivers results in **strict FIFO** submission order.
 
-https://github.com/user-attachments/assets/cba8cb87-a2c8-467d-bc86-637a15bcb3a6
+https://github.com/user-attachments/assets/a808dbe4-b422-47a3-9768-94dfe53c21c3
 
 ## Features
 
