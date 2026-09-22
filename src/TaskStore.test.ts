@@ -381,27 +381,27 @@ describe("TaskStore", () => {
   });
 
   describe("clearAllTasks", () => {
-    it("returns null when empty and cleared tasks array when populated", () => {
+    it("returns empty array when empty and cleared tasks array when populated", () => {
       const store = createStore();
-      expect(store.clearAllTasks()).toBeNull();
+      expect(store.clearAllTasks()).toEqual([]);
 
       store.pushTask(createPendingTask("t1", 1, 1));
       store.pushTask(createPendingTask("t2", 2, 1));
 
       const cleared = store.clearAllTasks();
       expect(cleared).toHaveLength(2);
-      expect(store.clearAllTasks()).toBeNull();
+      expect(store.clearAllTasks()).toEqual([]);
     });
   });
 
   describe("clearFinishedTasks", () => {
-    it("returns null when head is not terminal", () => {
+    it("returns empty array when head is not terminal", () => {
       const store = createStore();
       store.pushTask(createPendingTask("t1", 1, 1));
-      expect(store.clearFinishedTasks()).toBeNull();
+      expect(store.clearFinishedTasks()).toEqual([]);
     });
 
-    it("returns null when head failed task still has remaining retry credits", () => {
+    it("returns empty array when head failed task still has remaining retry credits", () => {
       const store = createStore();
       store.pushTask(createPendingTask("t1", 1, 2));
       const running = store.claimExecutableTask()!;
@@ -411,7 +411,7 @@ describe("TaskStore", () => {
       );
 
       // Remaining credits = 1, so it is retryable and NOT finished
-      expect(store.clearFinishedTasks()).toBeNull();
+      expect(store.clearFinishedTasks()).toEqual([]);
     });
 
     it("shifts contiguous terminal tasks and stops at first non-terminal task", () => {
@@ -434,16 +434,16 @@ describe("TaskStore", () => {
       // t3 remains pending
       const finished = store.clearFinishedTasks();
       expect(finished).toHaveLength(2);
-      expect(finished![0].ids).toEqual(["t1"]);
-      expect(finished![1].ids).toEqual(["t2"]);
+      expect(finished[0].ids).toEqual(["t1"]);
+      expect(finished[1].ids).toEqual(["t2"]);
 
-      // Next call returns null because t3 is pending
-      expect(store.clearFinishedTasks()).toBeNull();
+      // Next call returns empty array because t3 is pending
+      expect(store.clearFinishedTasks()).toEqual([]);
 
       // Clear all returns t3
       const remaining = store.clearAllTasks();
       expect(remaining).toHaveLength(1);
-      expect(remaining![0].ids).toEqual(["t3"]);
+      expect(remaining[0].ids).toEqual(["t3"]);
     });
   });
 

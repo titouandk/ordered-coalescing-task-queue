@@ -269,28 +269,21 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
   }
 
   /**
-   * Clears all tasks from the list and returns the removed tasks
-   * (or null if the list was already empty).
+   * Clears all tasks from the list and returns the removed tasks.
    */
-  clearAllTasks(): ITask<TTaskId, TTaskPayload, TTaskResult>[] | null {
-    if (this.#tasks.length === 0) {
-      return null;
-    }
+  clearAllTasks(): ITask<TTaskId, TTaskPayload, TTaskResult>[] {
     this.#runningCount = 0;
-    const cleared = this.#tasks.splice(0);
-    return cleared;
+    return this.#tasks.splice(0);
   }
 
   /**
    * Removes contiguous finished tasks (succeeded, or failed with 0 credits)
-   * from the head of the list and returns them (or null if none are finished).
+   * from the head of the list and returns them.
    */
-  clearFinishedTasks():
-    | (
-        | ISucceededTask<TTaskId, TTaskPayload, TTaskResult>
-        | IFailedTask<TTaskId, TTaskPayload>
-      )[]
-    | null {
+  clearFinishedTasks(): (
+    | ISucceededTask<TTaskId, TTaskPayload, TTaskResult>
+    | IFailedTask<TTaskId, TTaskPayload>
+  )[] {
     const finished: (
       | ISucceededTask<TTaskId, TTaskPayload, TTaskResult>
       | IFailedTask<TTaskId, TTaskPayload>
@@ -309,6 +302,6 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
       }
     }
 
-    return finished.length > 0 ? finished : null;
+    return finished;
   }
 }

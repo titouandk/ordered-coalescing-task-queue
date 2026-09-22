@@ -59,7 +59,7 @@ export class OrderedCoalescingTaskQueue<
 
   clearAllTasks(): void {
     const clearedTasks = this.#store.clearAllTasks();
-    if (!clearedTasks) {
+    if (clearedTasks.length === 0) {
       return;
     }
 
@@ -241,9 +241,6 @@ export class OrderedCoalescingTaskQueue<
    */
   #deliverResults(): void {
     const finishedTasks = this.#store.clearFinishedTasks();
-    if (!finishedTasks) {
-      return;
-    }
 
     for (const task of finishedTasks) {
       if (task.status === "succeeded") {
