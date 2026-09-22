@@ -103,7 +103,23 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
     | null;
 
   /**
-   * Callback invoked each time an execution attempt has failed (retryable or not).
+   * Callback invoked immediately in real-time each time an individual execution
+   * attempt fails (whether retryable or final).
+   *
+   * Unlike `onTaskResult`, this fires as soon as the attempt fails, without
+   * waiting for predecessor tasks in the queue to complete.
+   * Check `remainingExecutionCredits` on the outcome to determine whether the task
+   * will be retried (`> 0`) or has exhausted its credits (`=== 0`).
+   *
+   * **Triggered when:**
+   * - The executor (`executeTask`) throws an error or returns a rejecting promise.
+   * - An attempt times out (`timeoutMs` elapsed before the executor resolves).
+   *
+   * **NOT triggered when:**
+   * - Tasks are cleared or aborted via `clearAllTasks()` (their terminal failure
+   *   is reported directly via `onTaskResult`).
+   * - Task coalescence fails (triggers `onFailedTaskCoalescence` instead).
+   *
    * Provide `null` if you do not want to handle this event.
    */
   onFailedTaskExecutionAttempt:
@@ -111,8 +127,12 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
     | null;
 
   /**
-   * Callback invoked when a task has definitively finished (either successfully
-   * or due to an unretryable failure).
+   * Callback invoked when a task has definitively finished (either successfully,
+   * after exhausting all execution credits, or when aborted / cleared).
+   *
+   * Delivered in strict FIFO queue order: this callback is only invoked once a
+   * task reaches the head of the queue and all predecessor tasks have finished.
+   *
    * This handler is mandatory.
    */
   onTaskResult: (outcome: ITaskOutcome<TTaskId, TTaskResult>) => void;
