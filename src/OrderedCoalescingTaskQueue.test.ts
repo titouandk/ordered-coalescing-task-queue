@@ -1022,4 +1022,222 @@ describe("OrderedCoalescingTaskQueue", () => {
       expect(vi.getTimerCount()).toBe(0);
     });
   });
+
+  describe("call patterns: onFailedTaskExecutionAttempt vs onTaskResult", () => {
+    it("reports an attempt failure in real time while onTaskResult is head-of-line blocked", async () => {
+      const { executeTask, deferreds } = createControlledExecutor();
+      const onFailedTaskExecutionAttempt = vi.fn();
+      const onTaskResult = vi.fn();
+      const queue = createQueue({
+        executeTask,
+        onFailedTaskExecutionAttempt,
+        onTaskResult,
+        maxConcurrency: 2,
+        initialExecutionCredits: 1,
+      });
+
+      queue.pushTask({ id: "a", payload: 1 });
+      queue.pushTask({ id: "b", payload: 2 });
+      expect(executeTask).toHaveBeenCalledTimes(2);
+
+      // Task B fails immediately while Task A is still in flight
+      deferreds[1].reject(new Error("B failed"));
+      await flush();
+
+      // onFailedTaskExecutionAttempt is invoked in real time for B
+      expect(onFailedTaskExecutionAttempt).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          ids: ["b"],
+          status: "failed",
+          remainingExecutionCredits: 0,
+        }),
+      );
+
+      // onTaskResult is blocked behind Task A at the head of the queue
+      expect(onTaskResult).not.toHaveBeenCalled();
+
+      // Task A finishes
+      deferreds[0].resolve("result A");
+      await flush();
+
+      // Results are delivered in strict FIFO queue order: A first, then B
+      expect(onTaskResult).toHaveBeenCalledTimes(2);
+      expect(onTaskResult.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          ids: ["a"],
+          status: "succeeded",
+          result: "result A",
+        }),
+      );
+      expect(onTaskResult.mock.calls[1][0]).toEqual(
+        expect.objectContaining({
+          ids: ["b"],
+          status: "failed",
+          remainingExecutionCredits: 0,
+        }),
+      );
+    });
+
+    it("invokes onFailedTaskExecutionAttempt on every retry attempt but onTaskResult once on final success", async () => {
+      const executeTask = vi
+        .fn<TestConfig["executeTask"]>()
+        .mockRejectedValueOnce(new Error("attempt 1 failed"))
+        .mockRejectedValueOnce(new Error("attempt 2 failed"))
+        .mockResolvedValueOnce("success on attempt 3");
+      const onFailedTaskExecutionAttempt = vi.fn();
+      const onTaskResult = vi.fn();
+      const queue = createQueue({
+        executeTask,
+        onFailedTaskExecutionAttempt,
+        onTaskResult,
+        initialExecutionCredits: 3,
+      });
+
+      queue.pushTask({ id: "a", payload: 1 });
+      await flush();
+
+      // onFailedTaskExecutionAttempt fires on attempt 1 and 2
+      expect(onFailedTaskExecutionAttempt).toHaveBeenCalledTimes(2);
+      expect(
+        onFailedTaskExecutionAttempt.mock.calls.map(
+          ([outcome]) => outcome.remainingExecutionCredits,
+        ),
+      ).toEqual([2, 1]);
+
+      // onTaskResult fires once with the eventual success
+      expect(onTaskResult).toHaveBeenCalledExactlyOnceWith({
+        ids: ["a"],
+        status: "succeeded",
+        result: "success on attempt 3",
+      });
+    });
+
+    it("invokes onFailedTaskExecutionAttempt on every attempt including the final failure, then onTaskResult", async () => {
+      const executeTask = vi
+        .fn<TestConfig["executeTask"]>()
+        .mockRejectedValueOnce(new Error("attempt 1 failed"))
+        .mockRejectedValueOnce(new Error("attempt 2 failed"));
+      const onFailedTaskExecutionAttempt = vi.fn();
+      const onTaskResult = vi.fn();
+      const queue = createQueue({
+        executeTask,
+        onFailedTaskExecutionAttempt,
+        onTaskResult,
+        initialExecutionCredits: 2,
+      });
+
+      queue.pushTask({ id: "a", payload: 1 });
+      await flush();
+
+      // onFailedTaskExecutionAttempt fires for both failed attempts
+      expect(onFailedTaskExecutionAttempt).toHaveBeenCalledTimes(2);
+      expect(
+        onFailedTaskExecutionAttempt.mock.calls.map(
+          ([outcome]) => outcome.remainingExecutionCredits,
+        ),
+      ).toEqual([1, 0]);
+
+      // onTaskResult fires once with the definitive failure
+      expect(onTaskResult).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          ids: ["a"],
+          status: "failed",
+          remainingExecutionCredits: 0,
+        }),
+      );
+    });
+
+    it("delivers onTaskResult for in-flight and pending tasks on clearAllTasks, bypassing onFailedTaskExecutionAttempt", async () => {
+      const { executeTask, deferreds } = createControlledExecutor();
+      const onFailedTaskExecutionAttempt = vi.fn();
+      const onTaskResult = vi.fn();
+      const queue = createQueue({
+        executeTask,
+        onFailedTaskExecutionAttempt,
+        onTaskResult,
+        maxConcurrency: 1,
+      });
+
+      queue.pushTask({ id: "a", payload: 1 });
+      queue.pushTask({ id: "b", payload: 2 });
+      expect(executeTask).toHaveBeenCalledTimes(1);
+
+      // Clearing aborts all tasks synchronously
+      queue.clearAllTasks();
+
+      expect(onTaskResult).toHaveBeenCalledTimes(2);
+      expect(onTaskResult.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          ids: ["a"],
+          status: "failed",
+          error: expect.any(TaskAbortedError),
+          remainingExecutionCredits: 0,
+        }),
+      );
+      expect(onTaskResult.mock.calls[1][0]).toEqual(
+        expect.objectContaining({
+          ids: ["b"],
+          status: "failed",
+          error: expect.any(TaskAbortedError),
+          remainingExecutionCredits: 0,
+        }),
+      );
+
+      // In-flight attempt rejects after the clear
+      deferreds[0].reject(new Error("late rejection"));
+      await flush();
+
+      // onFailedTaskExecutionAttempt is never called
+      expect(onFailedTaskExecutionAttempt).not.toHaveBeenCalled();
+    });
+
+    it("routes payload merge errors to onFailedTaskCoalescence without calling onFailedTaskExecutionAttempt", async () => {
+      const { executeTask, deferreds } = createControlledExecutor();
+      const coalescenceError = new Error("cannot coalesce");
+      const onFailedTaskCoalescence = vi.fn();
+      const onFailedTaskExecutionAttempt = vi.fn();
+      const onTaskResult = vi.fn();
+      const queue = createQueue({
+        executeTask,
+        coalesceTaskPayloads: vi.fn(() => {
+          throw coalescenceError;
+        }),
+        onFailedTaskCoalescence,
+        onFailedTaskExecutionAttempt,
+        onTaskResult,
+        maxConcurrency: 1,
+        maxCoalescingDepth: 2,
+      });
+
+      // Blocker task occupies the concurrency slot so that a and b are queued as pending
+      queue.pushTask({ id: "blocker", payload: 0 });
+      queue.pushTask({ id: "a", payload: 1 });
+      queue.pushTask({ id: "b", payload: 2 });
+      await flush();
+
+      // onFailedTaskCoalescence received the merge error
+      expect(onFailedTaskCoalescence).toHaveBeenCalledExactlyOnceWith({
+        oldestTask: { ids: ["a"], payload: 1 },
+        newestTask: { ids: ["b"], payload: 2 },
+        error: coalescenceError,
+      });
+
+      // No execution attempt failed
+      expect(onFailedTaskExecutionAttempt).not.toHaveBeenCalled();
+
+      // Resolve blocker, then task a, then task b
+      deferreds[0].resolve("blocker done");
+      await flush();
+      deferreds[1].resolve("a done");
+      await flush();
+      deferreds[2].resolve("b done");
+      await flush();
+
+      // All tasks executed individually and delivered results
+      expect(onTaskResult).toHaveBeenCalledTimes(3);
+      expect(onTaskResult.mock.calls[0][0].ids).toEqual(["blocker"]);
+      expect(onTaskResult.mock.calls[1][0].ids).toEqual(["a"]);
+      expect(onTaskResult.mock.calls[2][0].ids).toEqual(["b"]);
+    });
+  });
 });
