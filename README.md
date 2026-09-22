@@ -124,10 +124,12 @@ Options passed to `OrderedCoalescingTaskQueue`:
   - Execution timeout in milliseconds per attempt.
   - Must be `>= 1`. Set to `Infinity` to disable timeout.
 - `onTaskResult: (outcome: ITaskOutcome<TTaskId, TTaskResult>) => void`
-  - Mandatory callback invoked when a task definitively finishes (either succeeded, or failed with 0 credits left, or aborted).
-  - Guaranteed to be called in the exact order tasks were submitted.
+  - Mandatory callback invoked when a task definitively finishes (either succeeded, or failed with 0 credits left, or aborted/cleared).
+  - Guaranteed to be called in the exact order tasks were submitted (FIFO head-of-line delivery).
 - `onFailedTaskExecutionAttempt: ((outcome: IFailedTaskOutcome<TTaskId>) => void) | null`
-  - Optional callback invoked after each failed attempt, whether retryable or final.
+  - Optional callback invoked immediately in real-time after each failed attempt, whether retryable or final.
+  - Unlike `onTaskResult`, it is not delayed by head-of-line blocking behind slower predecessor tasks.
+  - Triggered by executor rejections and timeouts; not triggered by queue clearance via `clearAllTasks()` (reported directly to `onTaskResult`) or coalescence failures.
   - Set to `null` to ignore.
 - `onFailedTaskCoalescence: ((context: IFailedCoalescence<TTaskId, TTaskPayload>) => void) | null`
   - Optional callback invoked when `coalesceTaskPayloads` throws.
@@ -197,4 +199,6 @@ Options passed to `OrderedCoalescingTaskQueue`:
 - Coalescence Ordering: Coalescing is applied sequentially from oldest to newest adjacent tasks in the queue.
 - Coalescence Error Recovery: If `coalesceTaskPayloads` throws, the older task is marked uncoalescible to prevent infinite coalescing loops; both tasks remain in the queue and are executed separately.
 - Result Delivery Order: Results are buffered until all preceding tasks have finished. Even if a later task finishes before an earlier one due to concurrency, outcomes are emitted via `onTaskResult` strictly in submission order.
+- Attempt Failure Observability: Unlike `onTaskResult`, `onFailedTaskExecutionAttempt` is invoked immediately in real-time as soon as an attempt fails (e.g. error or timeout), providing immediate visibility without waiting for preceding tasks to complete.
+- Queue Clearance: Calling `clearAllTasks()` aborts in-flight attempts and synchronously delivers a terminal `TaskAbortedError` for all dropped tasks via `onTaskResult`, bypassing `onFailedTaskExecutionAttempt`.
 - Retries: When an attempt fails and execution credits remain, the task stays in the queue to be retried by the scheduler.
