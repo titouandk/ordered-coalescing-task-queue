@@ -12,6 +12,7 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
    * results in order.
    */
   executeTask(
+    this: void,
     task: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
     abortSignal: AbortSignal,
   ): Promise<TTaskResult>;
@@ -21,6 +22,7 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
    * two task payloads into a single one, when they are coalesced.
    */
   coalesceTaskPayloads(
+    this: void,
     oldestTaskPayload: TTaskPayload,
     newestTaskPayload: TTaskPayload,
   ): TTaskPayload;
@@ -99,7 +101,7 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
    * Provide `null` if you do not want to handle this event.
    */
   onFailedTaskCoalescence:
-    | ((context: IFailedCoalescence<TTaskId, TTaskPayload>) => void)
+    | ((this: void, context: IFailedCoalescence<TTaskId, TTaskPayload>) => void)
     | null;
 
   /**
@@ -123,7 +125,7 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
    * Provide `null` if you do not want to handle this event.
    */
   onFailedTaskExecutionAttempt:
-    | ((outcome: IFailedTaskOutcome<TTaskId>) => void)
+    | ((this: void, outcome: IFailedTaskOutcome<TTaskId>) => void)
     | null;
 
   /**
@@ -135,7 +137,10 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
    *
    * This handler is mandatory.
    */
-  onTaskResult: (outcome: ITaskOutcome<TTaskId, TTaskResult>) => void;
+  onTaskResult: (
+    this: void,
+    outcome: ITaskOutcome<TTaskId, TTaskResult>,
+  ) => void;
 }
 
 /**

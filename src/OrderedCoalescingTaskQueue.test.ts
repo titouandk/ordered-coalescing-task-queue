@@ -1240,4 +1240,68 @@ describe("OrderedCoalescingTaskQueue", () => {
       expect(onTaskResult.mock.calls[2][0].ids).toEqual(["b"]);
     });
   });
+
+  describe("Execution context (`this`) of hooks", () => {
+    it("calls all hooks with an undefined `this` context", async () => {
+      let executeCalled = false;
+      let coalesceCalled = false;
+      let onFailedCoalescenceCalled = false;
+      let onFailedAttemptCalled = false;
+      let onTaskResultCalled = false;
+
+      const blockerDeferred = createDeferred<string>();
+
+      const queue = new OrderedCoalescingTaskQueue<string, number, string>({
+        maxConcurrency: 1,
+        maxCoalescingDepth: 2,
+        initialExecutionCredits: 1,
+        timeoutMs: Infinity,
+        executeTask: function (this: void, task) {
+          executeCalled = true;
+          expect(this).toBeUndefined();
+          if (task.ids.includes("blocker")) {
+            return blockerDeferred.promise;
+          }
+          throw new Error("fail-execution");
+        },
+        coalesceTaskPayloads: function (this: void) {
+          coalesceCalled = true;
+          expect(this).toBeUndefined();
+          throw new Error("fail-coalesce");
+        },
+        onFailedTaskCoalescence: function (this: void) {
+          onFailedCoalescenceCalled = true;
+          expect(this).toBeUndefined();
+        },
+        onFailedTaskExecutionAttempt: function (this: void) {
+          onFailedAttemptCalled = true;
+          expect(this).toBeUndefined();
+        },
+        onTaskResult: function (this: void) {
+          onTaskResultCalled = true;
+          expect(this).toBeUndefined();
+        },
+      });
+
+      // 1. Blocker task runs and stays in-flight
+      queue.pushTask({ id: "blocker", payload: 0 });
+      expect(executeCalled).toBe(true);
+
+      // 2. While blocker is running, push two tasks to trigger coalescence failure
+      queue.pushTask({ id: "a", payload: 1 });
+      queue.pushTask({ id: "b", payload: 2 });
+      expect(coalesceCalled).toBe(true);
+      expect(onFailedCoalescenceCalled).toBe(true);
+
+      // 3. Resolve blocker so execution proceeds
+      blockerDeferred.resolve("ok");
+      await flush();
+
+      // 4. "a" executes and throws, triggering onFailedTaskExecutionAttempt
+      expect(onFailedAttemptCalled).toBe(true);
+
+      // 5. Results are delivered, triggering onTaskResult
+      expect(onTaskResultCalled).toBe(true);
+    });
+  });
 });

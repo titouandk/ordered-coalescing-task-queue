@@ -76,7 +76,7 @@ export class OrderedCoalescingTaskQueue<
     // can account for every id they pushed. Clearing forfeits any retry
     // credits, hence the 0.
     for (const task of clearedTasks) {
-      this.#config.onTaskResult({
+      this.#config.onTaskResult.call(undefined, {
         ids: task.ids,
         status: "failed",
         error,
@@ -116,7 +116,8 @@ export class OrderedCoalescingTaskQueue<
 
       let payload: TTaskPayload;
       try {
-        payload = this.#config.coalesceTaskPayloads(
+        payload = this.#config.coalesceTaskPayloads.call(
+          undefined,
           oldest.payload,
           newest.payload,
         );
@@ -128,7 +129,7 @@ export class OrderedCoalescingTaskQueue<
         // Then, notify the user by executing his handler. This code is
         // potentially re-entrant, which is why we execute it AFTER committing
         // the new state.
-        this.#config.onFailedTaskCoalescence?.({
+        this.#config.onFailedTaskCoalescence?.call(undefined, {
           oldestTask: describe(oldest),
           newestTask: describe(newest),
           error,
@@ -188,7 +189,7 @@ export class OrderedCoalescingTaskQueue<
       // Racing against the signal makes the attempt fail as soon as the
       // signal aborts, without waiting for the executor to honor it.
       result = await Promise.race([
-        this.#config.executeTask(description, signal),
+        this.#config.executeTask.call(undefined, description, signal),
         abortion.promise,
       ]);
       isSuccess = true;
@@ -222,7 +223,7 @@ export class OrderedCoalescingTaskQueue<
     }
 
     if (!isSuccess) {
-      this.#config.onFailedTaskExecutionAttempt?.({
+      this.#config.onFailedTaskExecutionAttempt?.call(undefined, {
         ids: runningTask.ids,
         status: "failed",
         error: error as TaskError,
@@ -244,13 +245,13 @@ export class OrderedCoalescingTaskQueue<
 
     for (const task of finishedTasks) {
       if (task.status === "succeeded") {
-        this.#config.onTaskResult({
+        this.#config.onTaskResult.call(undefined, {
           ids: task.ids,
           status: "succeeded",
           result: task.result,
         });
       } else {
-        this.#config.onTaskResult({
+        this.#config.onTaskResult.call(undefined, {
           ids: task.ids,
           status: "failed",
           error: task.error,
