@@ -26,9 +26,6 @@ export class OrderedCoalescingTaskQueue<
   readonly #config: IQueueConfig<TTaskId, TTaskPayload, TTaskResult>;
   readonly #store: TaskStore<TTaskId, TTaskPayload, TTaskResult>;
 
-  /** Number of tasks currently in the `running` state. */
-  #runningCount = 0;
-
   /**
    * Controller used to abort every running task when the queue is cleared.
    * It is replaced by a fresh controller after each clear, so that the
@@ -74,7 +71,6 @@ export class OrderedCoalescingTaskQueue<
     });
     this.#abortController.abort(error);
     this.#abortController = new AbortController();
-    this.#runningCount = 0;
 
     // Every dropped task gets a final outcome, in order, so that the user
     // can account for every id they pushed. Clearing forfeits any retry
@@ -158,12 +154,11 @@ export class OrderedCoalescingTaskQueue<
    */
   #schedule(): void {
     this.#coalesce();
-    while (this.#runningCount < this.#config.maxConcurrency) {
+    while (this.#store.runningCount < this.#config.maxConcurrency) {
       const runningTask = this.#store.claimExecutableTask();
       if (!runningTask) {
         break;
       }
-      this.#runningCount++;
       void this.#execute(runningTask);
     }
   }
@@ -225,8 +220,6 @@ export class OrderedCoalescingTaskQueue<
         return;
       }
     }
-
-    this.#runningCount--;
 
     if (!isSuccess) {
       this.#config.onFailedTaskExecutionAttempt?.({

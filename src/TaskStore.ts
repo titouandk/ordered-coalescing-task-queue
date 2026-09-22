@@ -40,8 +40,20 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
    */
   readonly #tasks: ITask<TTaskId, TTaskPayload, TTaskResult>[] = [];
 
+  /**
+   * Number of tasks currently in the "running" state.
+   */
+  #runningCount = 0;
+
   constructor(config: ITaskStoreConfig) {
     this.#config = config;
+  }
+
+  /**
+   * Returns the number of tasks currently in the "running" state.
+   */
+  get runningCount(): number {
+    return this.#runningCount;
   }
 
   /**
@@ -195,6 +207,7 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
           coalescible: task.coalescible,
         };
         this.#tasks[i] = runningTask;
+        this.#runningCount++;
         return runningTask;
       }
     }
@@ -224,6 +237,7 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
       result,
     };
     this.#tasks[idx] = succeededTask;
+    this.#runningCount--;
     return true;
   }
 
@@ -250,6 +264,7 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
       error,
     };
     this.#tasks[idx] = failedTask;
+    this.#runningCount--;
     return true;
   }
 
@@ -261,6 +276,7 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
     if (this.#tasks.length === 0) {
       return null;
     }
+    this.#runningCount = 0;
     const cleared = this.#tasks.splice(0);
     return cleared;
   }

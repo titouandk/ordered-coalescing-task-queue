@@ -333,6 +333,53 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("runningCount", () => {
+    it("tracks the number of currently running tasks through their lifecycle", () => {
+      const store = createStore();
+      expect(store.runningCount).toBe(0);
+
+      store.pushTask(createPendingTask("t1", 1, 1));
+      store.pushTask(createPendingTask("t2", 2, 1));
+      expect(store.runningCount).toBe(0);
+
+      const r1 = store.claimExecutableTask()!;
+      expect(store.runningCount).toBe(1);
+
+      const r2 = store.claimExecutableTask()!;
+      expect(store.runningCount).toBe(2);
+
+      store.resolveTaskExecution(r1, "result-1");
+      expect(store.runningCount).toBe(1);
+
+      store.rejectTaskExecution(
+        r2,
+        new TaskExecutionError({ message: "err", cause: null }),
+      );
+      expect(store.runningCount).toBe(0);
+    });
+
+    it("does not decrement runningCount if resolve or reject fails", () => {
+      const store = createStore();
+      store.pushTask(createPendingTask("t1", 1, 1));
+      const r1 = store.claimExecutableTask()!;
+      expect(store.runningCount).toBe(1);
+
+      store.clearAllTasks();
+      expect(store.runningCount).toBe(0);
+
+      const resolved = store.resolveTaskExecution(r1, "result-1");
+      expect(resolved).toBe(false);
+      expect(store.runningCount).toBe(0);
+
+      const rejected = store.rejectTaskExecution(
+        r1,
+        new TaskExecutionError({ message: "err", cause: null }),
+      );
+      expect(rejected).toBe(false);
+      expect(store.runningCount).toBe(0);
+    });
+  });
+
   describe("clearAllTasks", () => {
     it("returns null when empty and cleared tasks array when populated", () => {
       const store = createStore();
