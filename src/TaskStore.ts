@@ -16,16 +16,25 @@ import {
   type IRunningTask,
   type ISucceededTask,
   type ITask,
+  type IAreCoalescibleOptions,
 } from "./types/Task.types.js";
+import type { ICoalescedTaskDescription } from "./types/TaskDescription.types.js";
 import type { TaskError } from "./types/TaskError.types.js";
 
-export { areCoalescible };
+export { areCoalescible, type IAreCoalescibleOptions };
 
 /**
  * Configuration options for TaskStore.
  */
-export interface ITaskStoreConfig {
+export interface ITaskStoreConfig<TTaskId, TTaskPayload> {
   readonly maxCoalescingDepth: number;
+  readonly canCoalesceTasks:
+    | ((
+        this: void,
+        oldestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+        newestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+      ) => boolean)
+    | null;
 }
 
 /**
@@ -33,7 +42,7 @@ export interface ITaskStoreConfig {
  * for task lifecycle transitions (push, coalescence, execution, and clearance).
  */
 export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
-  readonly #config: ITaskStoreConfig;
+  readonly #config: ITaskStoreConfig<TTaskId, TTaskPayload>;
 
   /**
    * Internal list of tasks in order.
@@ -45,7 +54,7 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
    */
   #runningCount = 0;
 
-  constructor(config: ITaskStoreConfig) {
+  constructor(config: ITaskStoreConfig<TTaskId, TTaskPayload>) {
     this.#config = config;
   }
 
@@ -79,16 +88,25 @@ export class TaskStore<TTaskId, TTaskPayload, TTaskResult> {
         ICoalescingTask<TTaskId, TTaskPayload>,
       ]
     | null {
+    // If there is already a task in "coalescing" status, we cannot
+    // coalesce another pair of tasks.
     for (let i = 0; i < this.#tasks.length; i++) {
       if (this.#tasks[i].status === "coalescing") {
         return null;
       }
     }
 
+    // We iterate through the tasks to find the first adjacent pair of
+    // coalescible tasks.
     for (let i = 1; i < this.#tasks.length; i++) {
       const prev = this.#tasks[i - 1];
       const curr = this.#tasks[i];
-      if (areCoalescible(prev, curr, this.#config.maxCoalescingDepth)) {
+      if (
+        areCoalescible(prev, curr, {
+          maxCoalescingDepth: this.#config.maxCoalescingDepth,
+          canCoalesceTasks: this.#config.canCoalesceTasks,
+        })
+      ) {
         const coalescingPrev: ICoalescingTask<TTaskId, TTaskPayload> = {
           status: "coalescing",
           ids: prev.ids,

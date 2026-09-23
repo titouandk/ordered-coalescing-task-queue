@@ -48,6 +48,9 @@ const queue = new OrderedCoalescingTaskQueue({
     console.log("Task result:", outcome);
   },
 
+  // Optional hook to selectively permit task coalescence (provide null if unused).
+  canCoalesceTasks: null,
+
   // Optional hook called immediately when an attempt fails (provide null if unused).
   onFailedTaskExecutionAttempt: null,
 
@@ -106,6 +109,8 @@ const config: IQueueConfig<TaskId, TaskPayload, TaskResult> = {
     }
   },
 
+  canCoalesceTasks: null,
+
   onFailedTaskExecutionAttempt: (outcome) => {
     console.warn(
       "Attempt failed, retries left:",
@@ -155,6 +160,10 @@ Options passed to `OrderedCoalescingTaskQueue`:
 - `coalesceTaskPayloads(oldestTaskPayload: TTaskPayload, newestTaskPayload: TTaskPayload): TTaskPayload`
   - Mandatory function to combine two payloads into one.
   - Thrown errors are caught; the two tasks are then kept separate.
+- `canCoalesceTasks: ((oldestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>, newestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>) => boolean) | null`
+  - Optional predicate function to determine if two adjacent tasks are allowed to coalesce together.
+  - If provided, adjacent tasks are only coalesced when this function returns `true`.
+  - Set to `null` to allow coalescing for all eligible adjacent tasks.
 - `maxConcurrency: number`
   - Maximum number of tasks executed in parallel.
   - Must be `>= 1`. Set to `1` for sequential execution, or `Infinity` for unbounded concurrency.

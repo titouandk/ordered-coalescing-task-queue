@@ -4,6 +4,7 @@
  * Those types should not be exposed to the user.
  */
 
+import type { ICoalescedTaskDescription } from "./TaskDescription.types.js";
 import type { TaskError } from "./TaskError.types.js";
 
 /**
@@ -118,18 +119,52 @@ function isCoalescible<TTaskId, TTaskPayload, TTaskResult>(
 }
 
 /**
+ * Options passed to `areCoalescible` to check if two tasks are eligible for coalescence.
+ */
+export interface IAreCoalescibleOptions<TTaskId, TTaskPayload> {
+  /** Maximum number of tasks allowed to be coalesced together. */
+  readonly maxCoalescingDepth: number;
+
+  /**
+   * Predicate function to determine if two adjacent tasks are allowed
+   * to coalesce together.
+   *
+   * Provide `null` if you do not want to restrict task coalescence.
+   */
+  readonly canCoalesceTasks:
+    | ((
+        this: void,
+        oldestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+        newestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+      ) => boolean)
+    | null;
+}
+
+/**
  * Checks if two tasks are eligible to be coalesced together.
  */
 export function areCoalescible<TTaskId, TTaskPayload, TTaskResult>(
   prev: ITask<TTaskId, TTaskPayload, TTaskResult>,
   curr: ITask<TTaskId, TTaskPayload, TTaskResult>,
-  maxCoalescingDepth: number,
+  options: IAreCoalescibleOptions<TTaskId, TTaskPayload>,
 ): boolean {
-  return (
-    isCoalescible(prev, maxCoalescingDepth) &&
-    isCoalescible(curr, maxCoalescingDepth) &&
-    prev.ids.length + curr.ids.length <= maxCoalescingDepth
-  );
+  if (
+    !isCoalescible(prev, options.maxCoalescingDepth) ||
+    !isCoalescible(curr, options.maxCoalescingDepth) ||
+    prev.ids.length + curr.ids.length > options.maxCoalescingDepth
+  ) {
+    return false;
+  }
+
+  if (options.canCoalesceTasks) {
+    return options.canCoalesceTasks.call(
+      undefined,
+      { ids: prev.ids, payload: prev.payload },
+      { ids: curr.ids, payload: curr.payload },
+    );
+  }
+
+  return true;
 }
 
 /**

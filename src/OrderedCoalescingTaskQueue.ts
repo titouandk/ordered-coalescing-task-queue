@@ -41,6 +41,7 @@ export class OrderedCoalescingTaskQueue<
     this.#config = config;
     this.#store = new TaskStore({
       maxCoalescingDepth: config.maxCoalescingDepth,
+      canCoalesceTasks: config.canCoalesceTasks,
     });
   }
 

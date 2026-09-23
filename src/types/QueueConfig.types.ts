@@ -28,6 +28,24 @@ export interface IQueueConfig<TTaskId, TTaskPayload, TTaskResult> {
   ): TTaskPayload;
 
   /**
+   * Predicate function to determine if two adjacent tasks are allowed
+   * to coalesce together.
+   *
+   * If provided, the queue will only coalesce two eligible adjacent tasks if
+   * this function returns `true`. If it returns `false`, the tasks remain
+   * separate and will be executed individually in order.
+   *
+   * Provide `null` if you do not want to restrict task coalescence.
+   */
+  canCoalesceTasks:
+    | ((
+        this: void,
+        oldestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+        newestTask: ICoalescedTaskDescription<TTaskId, TTaskPayload>,
+      ) => boolean)
+    | null;
+
+  /**
    * Maximum number of tasks allowed to be processed in parallel.
    *
    * Special values:

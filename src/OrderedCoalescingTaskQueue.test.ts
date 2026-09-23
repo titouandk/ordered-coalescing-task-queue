@@ -23,6 +23,7 @@ function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
     coalesceTaskPayloads: vi.fn(
       (oldestPayload, newestPayload) => oldestPayload + newestPayload,
     ),
+    canCoalesceTasks: null,
     maxConcurrency: 1,
     maxCoalescingDepth: 1,
     initialExecutionCredits: 1,
@@ -1247,6 +1248,7 @@ describe("OrderedCoalescingTaskQueue", () => {
       let coalesceCalled = false;
       let onFailedCoalescenceCalled = false;
       let onFailedAttemptCalled = false;
+      let canCoalesceTasksCalled = false;
       let onTaskResultCalled = false;
 
       const blockerDeferred = createDeferred<string>();
@@ -1256,6 +1258,11 @@ describe("OrderedCoalescingTaskQueue", () => {
         maxCoalescingDepth: 2,
         initialExecutionCredits: 1,
         timeoutMs: Infinity,
+        canCoalesceTasks: function (this: void) {
+          canCoalesceTasksCalled = true;
+          expect(this).toBeUndefined();
+          return true;
+        },
         executeTask: function (this: void, task) {
           executeCalled = true;
           expect(this).toBeUndefined();
@@ -1290,6 +1297,7 @@ describe("OrderedCoalescingTaskQueue", () => {
       // 2. While blocker is running, push two tasks to trigger coalescence failure
       queue.pushTask({ id: "a", payload: 1 });
       queue.pushTask({ id: "b", payload: 2 });
+      expect(canCoalesceTasksCalled).toBe(true);
       expect(coalesceCalled).toBe(true);
       expect(onFailedCoalescenceCalled).toBe(true);
 
@@ -1302,6 +1310,143 @@ describe("OrderedCoalescingTaskQueue", () => {
 
       // 5. Results are delivered, triggering onTaskResult
       expect(onTaskResultCalled).toBe(true);
+    });
+  });
+
+  describe("canCoalesceTasks hook", () => {
+    it("allows coalescing only when canCoalesceTasks returns true", async () => {
+      const executeTask = vi.fn(async (task) => task.ids.join("+"));
+      const onTaskResult = vi.fn();
+      const canCoalesceTasks = vi.fn(
+        (oldest, newest) => oldest.payload.seq === newest.payload.seq,
+      );
+
+      const queue = new OrderedCoalescingTaskQueue<
+        string,
+        { seq: string; val: number },
+        string
+      >({
+        maxConcurrency: 1,
+        maxCoalescingDepth: 5,
+        initialExecutionCredits: 1,
+        timeoutMs: Infinity,
+        executeTask,
+        coalesceTaskPayloads: (oldest, newest) => ({
+          seq: oldest.seq,
+          val: oldest.val + newest.val,
+        }),
+        canCoalesceTasks,
+        onFailedTaskCoalescence: null,
+        onFailedTaskExecutionAttempt: null,
+        onTaskResult,
+      });
+
+      // t1 is seq A, t2 is seq B, t3 is seq B
+      queue.pushTask({ id: "t1", payload: { seq: "A", val: 1 } });
+      queue.pushTask({ id: "t2", payload: { seq: "B", val: 10 } });
+      queue.pushTask({ id: "t3", payload: { seq: "B", val: 20 } });
+
+      await flush();
+
+      // t1 executes on its own
+      // t2 and t3 coalesce together because their sequence is the same
+      expect(executeTask).toHaveBeenCalledTimes(2);
+      expect(executeTask).toHaveBeenNthCalledWith(
+        1,
+        { ids: ["t1"], payload: { seq: "A", val: 1 } },
+        expect.any(AbortSignal),
+      );
+      expect(executeTask).toHaveBeenNthCalledWith(
+        2,
+        { ids: ["t2", "t3"], payload: { seq: "B", val: 30 } },
+        expect.any(AbortSignal),
+      );
+
+      expect(onTaskResult).toHaveBeenCalledTimes(2);
+      expect(onTaskResult).toHaveBeenNthCalledWith(1, {
+        ids: ["t1"],
+        status: "succeeded",
+        result: "t1",
+      });
+      expect(onTaskResult).toHaveBeenNthCalledWith(2, {
+        ids: ["t2", "t3"],
+        status: "succeeded",
+        result: "t2+t3",
+      });
+    });
+
+    it("does not coalesce any tasks if canCoalesceTasks always returns false", async () => {
+      const executeTask = vi.fn(async (task) => task.ids.join("+"));
+      const onTaskResult = vi.fn();
+
+      const queue = new OrderedCoalescingTaskQueue<string, number, string>({
+        maxConcurrency: 1,
+        maxCoalescingDepth: 5,
+        initialExecutionCredits: 1,
+        timeoutMs: Infinity,
+        executeTask,
+        coalesceTaskPayloads: (oldest, newest) => oldest + newest,
+        canCoalesceTasks: () => false,
+        onFailedTaskCoalescence: null,
+        onFailedTaskExecutionAttempt: null,
+        onTaskResult,
+      });
+
+      queue.pushTask({ id: "t1", payload: 1 });
+      queue.pushTask({ id: "t2", payload: 2 });
+      queue.pushTask({ id: "t3", payload: 3 });
+
+      await flush();
+
+      expect(executeTask).toHaveBeenCalledTimes(3);
+      expect(onTaskResult).toHaveBeenCalledTimes(3);
+    });
+
+    it("passes cumulative task descriptions when evaluating multi-task coalescing", async () => {
+      const recordedPairs: Array<{ oldestIds: string[]; newestIds: string[] }> =
+        [];
+
+      const blockerDeferred = createDeferred<string>();
+
+      const queue = new OrderedCoalescingTaskQueue<string, number, string>({
+        maxConcurrency: 1,
+        maxCoalescingDepth: 5,
+        initialExecutionCredits: 1,
+        timeoutMs: Infinity,
+        executeTask: vi.fn(async (task) => {
+          if (task.ids.includes("t0")) {
+            return blockerDeferred.promise;
+          }
+          return "ok";
+        }),
+        coalesceTaskPayloads: (oldest, newest) => oldest + newest,
+        canCoalesceTasks: (oldest, newest) => {
+          recordedPairs.push({
+            oldestIds: [...oldest.ids],
+            newestIds: [...newest.ids],
+          });
+          return true;
+        },
+        onFailedTaskCoalescence: null,
+        onFailedTaskExecutionAttempt: null,
+        onTaskResult: vi.fn(),
+      });
+
+      // t0 blocks execution so t1, t2, t3 stay in queue and coalesce
+      queue.pushTask({ id: "t0", payload: 0 });
+      queue.pushTask({ id: "t1", payload: 1 });
+      queue.pushTask({ id: "t2", payload: 2 });
+      queue.pushTask({ id: "t3", payload: 3 });
+
+      // First (t1, t2) is evaluated
+      // Then (t1+t2, t3) is evaluated
+      expect(recordedPairs).toEqual([
+        { oldestIds: ["t1"], newestIds: ["t2"] },
+        { oldestIds: ["t1", "t2"], newestIds: ["t3"] },
+      ]);
+
+      blockerDeferred.resolve("ok");
+      await flush();
     });
   });
 });

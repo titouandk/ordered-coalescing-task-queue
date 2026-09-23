@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { areCoalescible, TaskStore } from "./TaskStore.js";
 import type { IPendingTask } from "./types/Task.types.js";
 import { TaskExecutionError } from "./types/TaskError.types.js";
@@ -7,6 +7,7 @@ describe("TaskStore", () => {
   const createStore = (maxCoalescingDepth = 5) => {
     return new TaskStore<string, { val: number }, string>({
       maxCoalescingDepth,
+      canCoalesceTasks: null,
     });
   };
 
@@ -451,7 +452,12 @@ describe("TaskStore", () => {
     it("returns true when both tasks are eligible and combined length <= maxCoalescingDepth", () => {
       const t1 = createPendingTask("t1", 1, 1, true);
       const t2 = createPendingTask("t2", 2, 1, true);
-      expect(areCoalescible(t1, t2, 2)).toBe(true);
+      expect(
+        areCoalescible(t1, t2, {
+          maxCoalescingDepth: 2,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(true);
     });
 
     it("returns false when combined length exceeds maxCoalescingDepth", () => {
@@ -469,19 +475,34 @@ describe("TaskStore", () => {
         remainingExecutionCredits: 1,
         coalescible: true,
       };
-      expect(areCoalescible(t1, t2, 3)).toBe(false);
+      expect(
+        areCoalescible(t1, t2, {
+          maxCoalescingDepth: 3,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(false);
     });
 
     it("returns false when prev task is not coalescible", () => {
       const t1 = createPendingTask("t1", 1, 1, false);
       const t2 = createPendingTask("t2", 2, 1, true);
-      expect(areCoalescible(t1, t2, 5)).toBe(false);
+      expect(
+        areCoalescible(t1, t2, {
+          maxCoalescingDepth: 5,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(false);
     });
 
     it("returns false when curr task is not coalescible", () => {
       const t1 = createPendingTask("t1", 1, 1, true);
       const t2 = createPendingTask("t2", 2, 1, false);
-      expect(areCoalescible(t1, t2, 5)).toBe(false);
+      expect(
+        areCoalescible(t1, t2, {
+          maxCoalescingDepth: 5,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(false);
     });
 
     it("returns false when a task is not in pending or retryable failed status", () => {
@@ -490,8 +511,104 @@ describe("TaskStore", () => {
         ...createPendingTask("t2", 2, 1, true),
         status: "running" as const,
       };
-      expect(areCoalescible(t1, runningTask, 5)).toBe(false);
-      expect(areCoalescible(runningTask, t1, 5)).toBe(false);
+      expect(
+        areCoalescible(t1, runningTask, {
+          maxCoalescingDepth: 5,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(false);
+      expect(
+        areCoalescible(runningTask, t1, {
+          maxCoalescingDepth: 5,
+          canCoalesceTasks: null,
+        }),
+      ).toBe(false);
+    });
+
+    it("invokes canCoalesceTasks and respects its return value", () => {
+      const t1 = createPendingTask("t1", 1, 1, true);
+      const t2 = createPendingTask("t2", 2, 1, true);
+
+      const canCoalesceTasks = vi.fn(() => false);
+      expect(
+        areCoalescible(t1, t2, { maxCoalescingDepth: 5, canCoalesceTasks }),
+      ).toBe(false);
+      expect(canCoalesceTasks).toHaveBeenCalledWith(
+        { ids: ["t1"], payload: { val: 1 } },
+        { ids: ["t2"], payload: { val: 2 } },
+      );
+
+      canCoalesceTasks.mockReturnValue(true);
+      expect(
+        areCoalescible(t1, t2, { maxCoalescingDepth: 5, canCoalesceTasks }),
+      ).toBe(true);
+    });
+
+    it("does not invoke canCoalesceTasks if depth is exceeded", () => {
+      const t1 = createPendingTask("t1", 1, 1, true);
+      const t2 = createPendingTask("t2", 2, 1, true);
+      const canCoalesceTasks = vi.fn(() => true);
+
+      expect(
+        areCoalescible(t1, t2, { maxCoalescingDepth: 1, canCoalesceTasks }),
+      ).toBe(false);
+      expect(canCoalesceTasks).not.toHaveBeenCalled();
+    });
+
+    it("calls canCoalesceTasks with undefined this context", () => {
+      const t1 = createPendingTask("t1", 1, 1, true);
+      const t2 = createPendingTask("t2", 2, 1, true);
+      let called = false;
+
+      const canCoalesceTasks = function (this: void) {
+        called = true;
+        expect(this).toBeUndefined();
+        return true;
+      };
+
+      areCoalescible(t1, t2, { maxCoalescingDepth: 5, canCoalesceTasks });
+      expect(called).toBe(true);
+    });
+  });
+
+  describe("claimCoalescibleTaskPair with canCoalesceTasks", () => {
+    it("skips adjacent pairs rejected by canCoalesceTasks and coalesces subsequent eligible pairs", () => {
+      type SeqPayload = { seq: string; val: number };
+      const store = new TaskStore<string, SeqPayload, void>({
+        maxCoalescingDepth: 5,
+        canCoalesceTasks: (oldest, newest) =>
+          oldest.payload.seq === newest.payload.seq,
+      });
+
+      // T1 (seq A), T2 (seq B), T3 (seq B)
+      store.pushTask({
+        status: "pending",
+        ids: ["t1"],
+        payload: { seq: "A", val: 1 },
+        remainingExecutionCredits: 1,
+        coalescible: true,
+      });
+      store.pushTask({
+        status: "pending",
+        ids: ["t2"],
+        payload: { seq: "B", val: 2 },
+        remainingExecutionCredits: 1,
+        coalescible: true,
+      });
+      store.pushTask({
+        status: "pending",
+        ids: ["t3"],
+        payload: { seq: "B", val: 3 },
+        remainingExecutionCredits: 1,
+        coalescible: true,
+      });
+
+      // (T1, T2) rejected because seq A !== seq B.
+      // (T2, T3) accepted because seq B === seq B.
+      const pair = store.claimCoalescibleTaskPair();
+      expect(pair).not.toBeNull();
+      expect(pair![0].ids).toEqual(["t2"]);
+      expect(pair![1].ids).toEqual(["t3"]);
     });
   });
 });
